@@ -47,7 +47,8 @@ exports.uploadCertificate = async (req, res, next) => {
       key: field.key,
       ...field.value
     }));
-    
+    const keys = category.fields.map(field => field.key);
+
     const ocrResult = await processImage(certificateImage.filePath, templateFields);
     
     if (!ocrResult.success) {
