@@ -6,6 +6,7 @@ const {
   getIssuerCategories
 } = require('../controllers/verifierController');
 
+
 const router = express.Router();
 
 // Public routes for certificate verification
