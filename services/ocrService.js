@@ -91,150 +91,95 @@ const processBatchImages = async (imagePaths, templateFields = []) => {
 
 // processImage.js
 
-import fs from "fs";
-import path from "path";
-import {
-  GoogleGenAI,
-  Type,
-  Schema,
-  GenerateContentConfig,
-  Part,
-  Role,
-} from "@google/genai";
-// Or the corresponding SDK/REST client you use
+const fs = require("fs");
+const path = require("path");// not needed if Node 18+, you can use global fetch
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = "gemini-2.5-flash"; // or whichever model supports image + structured output
+const MODEL = "gemini-1.5-flash"; // or gemini-1.5-pro if you need more accuracy
 
 // Initialize client
-const client = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 /**
  * processImage
- * @param {string} imagePath - local path or URL or base64-encoded image
- * @param {Array<string>} templateFields - list of fields to extract, e.g. ['studentName','degreeTitle','graduationDate','certificateQR']
+ * @param {string} imagePath - local path or URL
+ * @param {Array<string>} templateFields - e.g. ['studentName','degreeTitle','graduationDate','certificateQR']
  * @returns {Promise<Object>} result
  */
 const processImage = async (imagePath, templateFields = []) => {
   try {
-    // 1. Prepare image data
-    let imagePart;
+    // 1. Prepare image
+    let base64Data;
+    let mimeType = "image/png";
+
     if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
-      // Fetch image
-      const response = await fetch(imagePath);
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      imagePart = Part.fromInlineData({
-        mimeType: "image/png", // or detect from extension or response headers
-        data: buffer.toString("base64"),
-      });
+      const res = await fetch(imagePath);
+      const arrayBuffer = await res.arrayBuffer();
+      base64Data = Buffer.from(arrayBuffer).toString("base64");
+      const contentType = res.headers.get("content-type");
+      if (contentType) mimeType = contentType;
     } else {
-      // Local file
       const ext = path.extname(imagePath).toLowerCase();
-      const mimeType =
+      mimeType =
         ext === ".jpg" || ext === ".jpeg"
           ? "image/jpeg"
           : ext === ".png"
           ? "image/png"
           : "application/octet-stream";
       const buffer = fs.readFileSync(imagePath);
-      imagePart = Part.fromInlineData({
-        mimeType,
-        data: buffer.toString("base64"),
-      });
+      base64Data = buffer.toString("base64");
     }
 
-    // 2. Build a prompt (structured) describing what we want
-    // We'll tell Gemini: please OCR everything, then extract values for these fields, give bounding boxes
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType,
+      },
+    };
+
+    // 2. Build prompt
     const fieldList = templateFields.join(", ");
     const promptText = `
-You are given an image containing a certificate. First, you should extract all text via OCR. Then extract the following fields with their values: ${fieldList}. 
-Also, for each field, provide the approximate location in the image as bounding boxes with coordinates {x1, y1, x2, y2}. 
-Respond with JSON in this format:
+You are an OCR and information extraction assistant.
+Extract all text from the certificate image, then extract the following fields: ${fieldList}.
+Also, for each field, return the approximate bounding box {x1,y1,x2,y2}.
+Return ONLY valid JSON in this format:
+
 {
   "extractedData": {
-    ${templateFields.map((f) => `"${f}": "some ${f} value"`).join(",\n    ")}
+    ${templateFields.map((f) => `"${f}": "sample ${f} value"`).join(",\n    ")}
   },
-  "ocrText": "the full OCR text from the image",
+  "ocrText": "the full OCR text",
   "ocrLocations": [
     {
-      "key": "studentName",
-      "location": { "x1": number, "y1": number, "x2": number, "y2": number }
-    },
-    ...
+      "key": "fieldName",
+      "location": { "x1": 0, "y1": 0, "x2": 0, "y2": 0 }
+    }
   ]
 }
     `.trim();
 
-    // 3. Define response schema to help constrain output
-    // This helps Gemini give you JSON with predictable structure
+    // 3. Call Gemini
+    const model = genAI.getGenerativeModel({ model: MODEL });
 
-    const responseSchema = {
-      type: Type.OBJECT,
-      properties: {
-        extractedData: {
-          type: Type.OBJECT,
-          properties: templateFields.reduce((obj, fieldName) => {
-            obj[fieldName] = { type: Type.STRING };
-            return obj;
-          }, {}),
-          required: templateFields, // force values for all fields
-        },
-        ocrText: { type: Type.STRING },
-        ocrLocations: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              key: { type: Type.STRING },
-              location: {
-                type: Type.OBJECT,
-                properties: {
-                  x1: { type: Type.NUMBER },
-                  y1: { type: Type.NUMBER },
-                  x2: { type: Type.NUMBER },
-                  y2: { type: Type.NUMBER },
-                },
-                required: ["x1", "y1", "x2", "y2"],
-              },
-            },
-            required: ["key", "location"],
-          },
-        },
-      },
-      required: ["extractedData", "ocrText", "ocrLocations"],
-      propertyOrdering: ["extractedData", "ocrText", "ocrLocations"],
-    };
+    const result = await model.generateContent([
+      { text: promptText },
+      imagePart,
+    ]);
 
-    const config = new GenerateContentConfig({
-      responseMimeType: "application/json",
-      responseSchema,
-    });
+    const responseText = result.response.text();
 
-    // 4. Send request to Gemini
-    const response = await client.models.generateContent({
-      model: MODEL,
-      contents: [
-        imagePart,
-        {
-          role: Role.User,
-          text: promptText,
-        },
-      ],
-      config,
-    });
-
-    // 5. Parse response
+    // 4. Parse JSON safely
     let parsed;
     try {
-      parsed = response.parsed;
-      // `parsed` should be a JS object matching the schema if response was good
+      parsed = JSON.parse(responseText);
     } catch (e) {
-      // fallback: try JSON.parse
-      parsed = JSON.parse(response.text);
+      console.error("Invalid JSON from Gemini, raw output:", responseText);
+      throw new Error("Failed to parse Gemini response as JSON");
     }
 
-    // 6. Return nicely
+    // 5. Return structured result
     return {
       success: true,
       extractedData: parsed.extractedData,
