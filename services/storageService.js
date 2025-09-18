@@ -107,7 +107,9 @@ const createUploadDirs = () => {
 const saveFile = (file, subDirectory = '') => {
   return new Promise((resolve, reject) => {
     try {
-      const fileName = `${Date.now()}-${file.originalname}`;
+      // Sanitize and trim filename
+      const originalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '').trim();
+      const fileName = `${Date.now()}-${originalName}`;
       const publicId = subDirectory ? `${subDirectory}/${fileName}` : fileName;
       
       // Upload to Cloudinary using buffer
