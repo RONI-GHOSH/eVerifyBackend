@@ -62,7 +62,8 @@ exports.uploadCertificate = async (req, res, next) => {
         categoryId,
         extractedData: ocrResult.extractedData,
         ocrText: ocrResult.ocrText,
-        ocrLocations: ocrResult.ocrLocations
+        ocrLocations: ocrResult.ocrLocations,
+        categoryFilds: category.fields
       }
     });
   } catch (err) {
