@@ -146,15 +146,6 @@ exports.updateCategory = async (req, res, next) => {
       );
     }
     
-    // Handle template image upload if provided
-    // if (req.file) {
-    //   // Delete old template image
-    //   await deleteFile(category.templateImage);
-      
-    //   // Save new template image
-    //   const templateImage = await saveFile(req.file, 'templates');
-    //   req.body.templateImage = templateImage.filePath;
-    // }
      // Handle template image upload if provided
     if (req.files && req.files.templateImage[0]) {
       await deleteFile(category.templateImage);
