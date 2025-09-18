@@ -144,7 +144,7 @@ const processImage = async (imagePath, templateFields = []) => {
 You are an OCR and information extraction assistant.
 Extract all text from the certificate image, then extract the following fields: ${fieldList}.
 Also, for each field, return the approximate bounding box {x1,y1,x2,y2}.
-Return ONLY valid JSON in this format:
+Return ONLY valid JSON in this format without any extra character:
 
 {
   "extractedData": {
@@ -168,7 +168,11 @@ Return ONLY valid JSON in this format:
       imagePart,
     ]);
 
-    const responseText = result.response.text();
+    var responseText = result.response.text();
+    responseText = responseText.trim()
+      .replace(/^```(json)?/i, "")
+      .replace(/```$/i, "")
+      .trim();
 
     // 4. Parse JSON safely
     let parsed;
