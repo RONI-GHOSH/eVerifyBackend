@@ -96,7 +96,7 @@ const path = require("path");// not needed if Node 18+, you can use global fetch
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = "gemini-1.5-flash"; // or gemini-1.5-pro if you need more accuracy
+const MODEL = "gemini-2.5-flash"; // or gemini-1.5-pro if you need more accuracy
 
 // Initialize client
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
